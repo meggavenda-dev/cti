@@ -31,13 +31,16 @@ def parse_brl_value(x) -> float:
         return 0.0
     if isinstance(x, (int, float)):
         return float(x)
+
     s = str(x).strip()
     if s == "":
         return 0.0
+
     # remove R$ e espaços
     s = s.replace("R$", "").strip()
     # remove separador de milhar e troca vírgula por ponto
     s = s.replace(".", "").replace(",", ".")
+
     try:
         return float(s)
     except ValueError:
@@ -50,7 +53,7 @@ def find_header_and_total_row(raw: pd.DataFrame) -> Tuple[int, Optional[int], Op
     total_idx = None
     total_val = None
 
-    # procura cabeçalho
+    # procura cabeçalho (linha com 'Atendimento' e 'Nr. Guia')
     for i in range(len(raw)):
         row = raw.iloc[i]
         first = row.iloc[0]
@@ -60,7 +63,7 @@ def find_header_and_total_row(raw: pd.DataFrame) -> Tuple[int, Optional[int], Op
                 header_idx = i
                 break
 
-    # procura linha de total
+    # procura linha do total ("Total R$ ...")
     for i in range(len(raw)):
         row = raw.iloc[i]
         for v in row.values:
@@ -80,7 +83,11 @@ def find_header_and_total_row(raw: pd.DataFrame) -> Tuple[int, Optional[int], Op
 
 
 def parse_atendimentos_xls(file_bytes: bytes, filename: str = "") -> Tuple[pd.DataFrame, Optional[float]]:
-    """Lê o XLS/XLSX e devolve um DataFrame limpo + total do relatório (se encontrado)."""
+    """
+    Lê o XLS/XLSX e devolve um DataFrame limpo + total do relatório (se encontrado).
+    - .xls  -> xlrd
+    - .xlsx -> openpyxl
+    """
     engine = "xlrd" if filename.lower().endswith(".xls") else "openpyxl"
     raw = pd.read_excel(BytesIO(file_bytes), engine=engine, header=None)
 
@@ -141,7 +148,7 @@ def save_convenios_mapping(mapping: Dict[str, str]) -> None:
     with open(path, "w", encoding="utf-8") as f:
         json.dump(cleaned, f, ensure_ascii=False, indent=2)
 
-    # escreve no GitHub (persistente) via Contents API [1](https://github.com/meggavenda-dev/cirurgias/blob/main/seguran%C3%A7a.py)
+    # escreve no GitHub (persistente)
     if token and repo:
         github_put_json(
             repo=repo,
@@ -153,7 +160,7 @@ def save_convenios_mapping(mapping: Dict[str, str]) -> None:
         )
 
 
-@st.dialog("Resumo do relatório", width="medium")  # modal nativo do Streamlit [2](https://streamlit.io/)
+@st.dialog("Resumo do relatório", width="medium")
 def resumo_dialog(resumo: Dict[str, float], report_total: Optional[float], calc_total: float):
     cols = st.columns(2)
     cols[0].metric("Total (calculado)", format_brl(calc_total))
@@ -211,7 +218,7 @@ def main():
             num_rows="dynamic",
             hide_index=True,
             column_config={
-                "Faturamento": st.column_config.SelectboxColumn(  # dropdown no editor [3](https://github.com/meggavenda-dev/cirurgias)
+                "Faturamento": st.column_config.SelectboxColumn(
                     "Faturamento",
                     options=FATURAMENTO_OPCOES,
                     help="Escolha: AMHPDF, HOSPITAL, DIRETO (ou deixe em branco)",
@@ -240,7 +247,7 @@ def main():
     # --- Aba Processamento ---
     with tab_proc:
         st.subheader("Importar XLS e calcular totais por guia")
-        up = st.file_uploader("Envie o arquivo .xls (Atendimentos Analítico)", type=["xls", "xlsx"])
+        up = st.file_uploader("Envie o arquivo .xls/.xlsx (Atendimentos Analítico)", type=["xls", "xlsx"])
 
         if up is None:
             st.info("Envie um arquivo para começar.")
@@ -338,3 +345,17 @@ def main():
                 hide_index=True,
             )
 
+    # --- Aba Ajuda (CORRIGIDA) ---
+    with tab_help:
+        st.subheader("Como configurar a persistência no GitHub")
+        st.markdown(
+            """
+1. Crie um repositório no GitHub e coloque estes arquivos.
+2. Gere um **Personal Access Token** (PAT) com permissão de escrita no repositório.
+3. No Streamlit Cloud, configure os secrets:
+
+```toml
+GITHUB_TOKEN = "ghp_..."
+GITHUB_REPO = "seu_usuario/seu_repo"
+GITHUB_BRANCH = "main"
+CONVENIOS_PATH = "data/convenios_faturamento.json"  # opcional
