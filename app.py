@@ -338,16 +338,18 @@ def main():
                 hide_index=True,
             )
 
-    with tab_help:
-        st.subheader("Como configurar a persistência no GitHub")
-        st.markdown(
-            """
-1. Crie um repositório no GitHub e coloque estes arquivos.
-2. Gere um **Personal Access Token** (PAT) com permissão de escrita no repositório.
-3. No Streamlit Cloud, configure os secrets:
 
-```toml
-GITHUB_TOKEN = "ghp_..."
-GITHUB_REPO = "seu_usuario/seu_repo"
-GITHUB_BRANCH = "main"
-CONVENIOS_PATH = "data/convenios_faturamento.json"  # opcional
+    with tab_help:
+            st.subheader("Como configurar a persistência no GitHub")
+            st.markdown(
+                """
+    1. Crie um repositório no GitHub e coloque estes arquivos.
+    2. Gere um **Personal Access Token** (PAT) com permissão de escrita no repositório.
+    3. No Streamlit Cloud, configure os secrets:
+    
+    ```toml
+    GITHUB_TOKEN = "ghp_..."
+    GITHUB_REPO = "seu_usuario/seu_repo"
+    GITHUB_BRANCH = "main"
+    CONVENIOS_PATH = "data/convenios_faturamento.json"  # opcional
+
