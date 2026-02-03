@@ -50,9 +50,9 @@ def find_header_and_total_row(raw: pd.DataFrame) -> Tuple[int, Optional[int], Op
     total_idx = None
     total_val = None
 
+    # procura cabeçalho
     for i in range(len(raw)):
         row = raw.iloc[i]
-        # header: primeira célula 'Atendimento' e alguma célula contém 'Nr. Guia'
         first = row.iloc[0]
         if isinstance(first, str) and first.strip().lower() == "atendimento":
             joined = " | ".join([str(v) for v in row.values if pd.notna(v)])
@@ -60,12 +60,12 @@ def find_header_and_total_row(raw: pd.DataFrame) -> Tuple[int, Optional[int], Op
                 header_idx = i
                 break
 
+    # procura linha de total
     for i in range(len(raw)):
         row = raw.iloc[i]
         for v in row.values:
             if isinstance(v, str) and "total r$" in v.lower():
                 total_idx = i
-                # tenta extrair o número
                 m = re.search(r"total\s*r\$\s*(.*)$", v, flags=re.IGNORECASE)
                 if m:
                     total_val = parse_brl_value(m.group(1))
@@ -80,9 +80,10 @@ def find_header_and_total_row(raw: pd.DataFrame) -> Tuple[int, Optional[int], Op
 
 
 def parse_atendimentos_xls(file_bytes: bytes, filename: str = "") -> Tuple[pd.DataFrame, Optional[float]]:
-    """Lê o XLS e devolve um DataFrame limpo + total do relatório (se encontrado)."""
+    """Lê o XLS/XLSX e devolve um DataFrame limpo + total do relatório (se encontrado)."""
     engine = "xlrd" if filename.lower().endswith(".xls") else "openpyxl"
     raw = pd.read_excel(BytesIO(file_bytes), engine=engine, header=None)
+
     header_idx, total_idx, report_total = find_header_and_total_row(raw)
 
     header_row = raw.iloc[header_idx]
@@ -91,6 +92,7 @@ def parse_atendimentos_xls(file_bytes: bytes, filename: str = "") -> Tuple[pd.Da
 
     start = header_idx + 1
     end = total_idx if total_idx is not None else len(raw)
+
     df = raw.iloc[start:end, wanted_cols].copy()
     df.rename(columns=col_map, inplace=True)
 
@@ -132,28 +134,34 @@ def save_convenios_mapping(mapping: Dict[str, str]) -> None:
     branch = st.secrets.get("GITHUB_BRANCH", "main")
     path = st.secrets.get("CONVENIOS_PATH", DEFAULT_DATA_PATH)
 
-    # limpa valores inválidos
     cleaned = {k: (v if v in FATURAMENTO_OPCOES else "") for k, v in mapping.items() if k}
 
-    # escreve local
+    # escreve local (para rodar localmente)
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(cleaned, f, ensure_ascii=False, indent=2)
 
+    # escreve no GitHub (persistente) via Contents API [1](https://github.com/meggavenda-dev/cirurgias/blob/main/seguran%C3%A7a.py)
     if token and repo:
-        github_put_json(repo=repo, path=path, token=token, branch=branch, data=cleaned,
-                        commit_message="Atualiza cadastro de convênios (faturamento)")
+        github_put_json(
+            repo=repo,
+            path=path,
+            token=token,
+            branch=branch,
+            data=cleaned,
+            commit_message="Atualiza cadastro de convênios (faturamento)",
+        )
 
 
-@st.dialog("Resumo do relatório", width="medium")
+@st.dialog("Resumo do relatório", width="medium")  # modal nativo do Streamlit [2](https://streamlit.io/)
 def resumo_dialog(resumo: Dict[str, float], report_total: Optional[float], calc_total: float):
     cols = st.columns(2)
-    cols[0].metric("Total (calculado)", f"R$ {calc_total:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+    cols[0].metric("Total (calculado)", format_brl(calc_total))
     if report_total is not None:
-        cols[1].metric("Total (informado no relatório)", f"R$ {report_total:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+        cols[1].metric("Total (informado no relatório)", format_brl(report_total))
     st.divider()
     for k in ["AMHPDF", "HOSPITAL", "DIRETO", "OUTROS"]:
-        st.metric(f"Total via {k}", f"R$ {resumo.get(k, 0.0):,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+        st.metric(f"Total via {k}", format_brl(resumo.get(k, 0.0)))
     st.caption("Feche esta janela clicando fora ou pressione ESC.")
 
 
@@ -172,7 +180,10 @@ def main():
             st.success("Persistência no GitHub: OK")
             st.caption(f"Repo: {st.secrets.get('GITHUB_REPO')}")
         else:
-            st.warning("Sem GITHUB_TOKEN/GITHUB_REPO em secrets. Vou salvar somente localmente (não persistente no Streamlit Cloud).")
+            st.warning(
+                "Sem GITHUB_TOKEN/GITHUB_REPO em secrets. Vou salvar somente localmente "
+                "(não persistente no Streamlit Cloud)."
+            )
 
     tab_proc, tab_conv, tab_help = st.tabs(["🧾 Processar relatório", "🏷️ Convênios", "❓ Ajuda"])
 
@@ -185,7 +196,10 @@ def main():
     # --- Aba Convênios ---
     with tab_conv:
         st.subheader("Cadastro de convênios → meio de faturamento")
-        st.write("Aqui você cadastra **uma única vez** o meio de faturamento para cada convênio. Depois, qualquer novo relatório reaproveita automaticamente.")
+        st.write(
+            "Aqui você cadastra **uma única vez** o meio de faturamento para cada convênio. "
+            "Depois, qualquer novo relatório reaproveita automaticamente."
+        )
 
         df_map = pd.DataFrame(
             sorted([(k, v) for k, v in mapping.items()], key=lambda x: x[0].lower()),
@@ -197,7 +211,7 @@ def main():
             num_rows="dynamic",
             hide_index=True,
             column_config={
-                "Faturamento": st.column_config.SelectboxColumn(
+                "Faturamento": st.column_config.SelectboxColumn(  # dropdown no editor [3](https://github.com/meggavenda-dev/cirurgias)
                     "Faturamento",
                     options=FATURAMENTO_OPCOES,
                     help="Escolha: AMHPDF, HOSPITAL, DIRETO (ou deixe em branco)",
@@ -209,12 +223,19 @@ def main():
         col1, col2 = st.columns([1, 3])
         with col1:
             if st.button("💾 Salvar cadastro", type="primary"):
-                new_map = {str(r["Convênio (chave)"]).strip(): str(r["Faturamento"]).strip() for _, r in edited.iterrows() if str(r["Convênio (chave)"]).strip()}
+                new_map = {
+                    str(r["Convênio (chave)"]).strip(): str(r["Faturamento"]).strip()
+                    for _, r in edited.iterrows()
+                    if str(r["Convênio (chave)"]).strip()
+                }
                 st.session_state.convenios_mapping = new_map
                 save_convenios_mapping(new_map)
                 st.success("Cadastro salvo!")
         with col2:
-            st.caption("Dica: a **chave** do convênio é o nome já sem códigos entre parênteses. Ex.: 'BRADESCO - DIRETO(1001)' vira 'BRADESCO - DIRETO'.")
+            st.caption(
+                "Dica: a **chave** do convênio é o nome já sem códigos entre parênteses. "
+                "Ex.: 'BRADESCO - DIRETO(1001)' vira 'BRADESCO - DIRETO'."
+            )
 
     # --- Aba Processamento ---
     with tab_proc:
@@ -230,7 +251,10 @@ def main():
                 st.error(f"Falha ao ler o arquivo: {e}")
                 st.stop()
 
-            st.caption(f"Linhas importadas: {len(df):,} | Convênios únicos: {df['ConvenioKey'].nunique():,} | Guias únicas: {df['Nr. Guia'].nunique():,}")
+            st.caption(
+                f"Linhas importadas: {len(df):,} | Convênios únicos: {df['ConvenioKey'].nunique():,} | "
+                f"Guias únicas: {df['Nr. Guia'].nunique():,}"
+            )
 
             # convênios novos
             convenios_arquivo = sorted(df["ConvenioKey"].dropna().astype(str).unique().tolist())
@@ -239,6 +263,7 @@ def main():
             if novos:
                 st.warning(f"Encontrados {len(novos)} convênios ainda sem meio de faturamento cadastrado.")
                 df_novos = pd.DataFrame({"Convênio (chave)": novos, "Faturamento": [""] * len(novos)})
+
                 edited_novos = st.data_editor(
                     df_novos,
                     hide_index=True,
@@ -258,11 +283,12 @@ def main():
                         v = str(r["Faturamento"]).strip()
                         if k and k not in mapping:
                             mapping[k] = v
+
                     st.session_state.convenios_mapping = mapping
                     save_convenios_mapping(mapping)
                     st.success("Novos convênios salvos!")
 
-            # agrega por guia (e operadora, por segurança)
+            # agrega por guia (e convênio)
             df_guia = (
                 df.groupby(["Nr. Guia", "ConvenioKey"], as_index=False)["Valor Total"].sum()
                 .rename(columns={"ConvenioKey": "Convênio", "Valor Total": "Total da Guia"})
@@ -288,7 +314,10 @@ def main():
 
             if report_total is not None:
                 diff = calc_total - report_total
-                st.caption(f"Total informado no relatório: {format_brl(report_total)} | Diferença (calculado - informado): {format_brl(diff)}")
+                st.caption(
+                    f"Total informado no relatório: {format_brl(report_total)} | "
+                    f"Diferença (calculado - informado): {format_brl(diff)}"
+                )
 
             colA, colB = st.columns([1, 1])
             with colA:
@@ -303,7 +332,11 @@ def main():
                 )
 
             st.subheader("Totais por guia")
-            st.dataframe(df_guia.sort_values("Total da Guia", ascending=False), use_container_width=True, hide_index=True)
+            st.dataframe(
+                df_guia.sort_values("Total da Guia", ascending=False),
+                use_container_width=True,
+                hide_index=True,
+            )
 
     with tab_help:
         st.subheader("Como configurar a persistência no GitHub")
@@ -311,19 +344,10 @@ def main():
             """
 1. Crie um repositório no GitHub e coloque estes arquivos.
 2. Gere um **Personal Access Token** (PAT) com permissão de escrita no repositório.
-3. No Streamlit Cloud (ou no seu ambiente), configure os secrets:
+3. No Streamlit Cloud, configure os secrets:
 
 ```toml
 GITHUB_TOKEN = "ghp_..."
 GITHUB_REPO = "seu_usuario/seu_repo"
 GITHUB_BRANCH = "main"
 CONVENIOS_PATH = "data/convenios_faturamento.json"  # opcional
-```
-
-> Se você rodar localmente, também funciona usando somente o arquivo em `data/`.
-            """
-        )
-
-
-if __name__ == "__main__":
-    main()
