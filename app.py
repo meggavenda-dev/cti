@@ -338,8 +338,3 @@ def main():
                 hide_index=True,
             )
 
-
-    with tab_help:
-            st.subheader("Como configurar a persistência no GitHub")
-            st.markdown(
-            
