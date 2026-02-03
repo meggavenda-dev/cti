@@ -1,0 +1,4 @@
+PyGithub
+pandas
+openpyxl
+streamlit
