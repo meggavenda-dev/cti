@@ -361,7 +361,8 @@ def main():
             CONVENIOS_PATH = "data/convenios_faturamento.json"
             ```
             """
-        ) # <--- Aqui fechamos a string e o parêntese
+        ) # <--- Fechamento da string e do parêntese do markdown
 
+# Essencial para o Streamlit executar sua função principal
 if __name__ == "__main__":
     main()
