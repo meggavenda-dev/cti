@@ -16,15 +16,16 @@ def _headers(token: str) -> Dict[str, str]:
 
 
 def github_get_file(repo: str, path: str, token: str, branch: str = "main") -> Dict[str, Any]:
+    """
+    Obtém metadados e conteúdo de um arquivo no repo via Contents API.
+    Repo no formato: "usuario/repositorio"
+    """
     url = f"{GITHUB_API}/repos/{repo}/contents/{path}"
     r = requests.get(url, headers=_headers(token), params={"ref": branch}, timeout=30)
-
     if r.status_code == 404:
         return {"exists": False}
-
     r.raise_for_status()
     data = r.json()
-
     return {
         "exists": True,
         "sha": data.get("sha"),
@@ -33,7 +34,17 @@ def github_get_file(repo: str, path: str, token: str, branch: str = "main") -> D
     }
 
 
-def github_put_file(repo: str, path: str, token: str, branch: str, content_bytes: bytes, commit_message: str) -> None:
+def github_put_file(
+    repo: str,
+    path: str,
+    token: str,
+    branch: str,
+    content_bytes: bytes,
+    commit_message: str,
+) -> None:
+    """
+    Cria ou atualiza um arquivo no repo via Contents API (Create or update file contents). [1](https://github.com/meggavenda-dev/cirurgias/blob/main/seguran%C3%A7a.py)
+    """
     url = f"{GITHUB_API}/repos/{repo}/contents/{path}"
     existing = github_get_file(repo=repo, path=path, token=token, branch=branch)
 
@@ -43,6 +54,7 @@ def github_put_file(repo: str, path: str, token: str, branch: str, content_bytes
         "branch": branch,
     }
 
+    # quando atualiza, precisa enviar o sha atual
     if existing.get("exists") and existing.get("sha"):
         payload["sha"] = existing["sha"]
 
@@ -51,6 +63,7 @@ def github_put_file(repo: str, path: str, token: str, branch: str, content_bytes
 
 
 def github_get_json(repo: str, path: str, token: str, branch: str = "main", default=None):
+    """Lê um JSON do GitHub (se não existir, devolve default)."""
     file_info = github_get_file(repo=repo, path=path, token=token, branch=branch)
     if not file_info.get("exists"):
         return default
@@ -66,6 +79,7 @@ def github_get_json(repo: str, path: str, token: str, branch: str = "main", defa
 
 
 def github_put_json(repo: str, path: str, token: str, branch: str, data, commit_message: str):
+    """Salva um dict/list como JSON no GitHub."""
     content = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
     github_put_file(
         repo=repo,
